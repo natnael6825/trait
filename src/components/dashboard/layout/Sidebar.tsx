@@ -75,11 +75,6 @@ const Sidebar = ({ activeItem = "Dashboard" }: SidebarProps) => {
       href: "/dashboard",
     },
     {
-      icon: <Search size={18} />,
-      label: "Profile Analyzer",
-      href: "/profile-analyzer",
-    },
-    {
       icon: <CreditCard size={18} />,
       label: "Subscription",
       href: "/subscription",
@@ -157,7 +152,7 @@ const Sidebar = ({ activeItem = "Dashboard" }: SidebarProps) => {
                   className="w-full justify-start text-sm h-9 text-gray-700 hover:text-blue-700"
                   asChild
                 >
-                  <Link to={`/profile-analyzer?id=${analysis.id}`}>
+                  <Link to={`/dashboard?id=${analysis.id}`}>
                     <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center mr-2 flex-shrink-0">
                       <span className="text-xs">
                         {analysis.name?.substring(0, 2) || "--"}

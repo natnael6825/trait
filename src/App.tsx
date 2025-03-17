@@ -7,7 +7,6 @@ import Dashboard from "./components/pages/dashboard";
 import Success from "./components/pages/success";
 import Home from "./components/pages/home";
 import Pricing from "./components/pages/pricing";
-import ProfileAnalyzerPage from "./components/pages/profile-analyzer";
 import { AuthProvider, useAuth } from "../supabase/auth";
 import { Toaster } from "./components/ui/toaster";
 
@@ -38,14 +37,6 @@ function AppRoutes() {
           element={
             <PrivateRoute>
               <Dashboard />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/profile-analyzer"
-          element={
-            <PrivateRoute>
-              <ProfileAnalyzerPage />
             </PrivateRoute>
           }
         />

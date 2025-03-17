@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/use-toast";
+import { Progress } from "@/components/ui/progress";
 import {
   Clipboard,
   Download,
@@ -48,11 +49,55 @@ export interface ProfileData {
   skills: string[];
 }
 
+export interface ProfileScore {
+  overall: number;
+  sections: {
+    basicInfo: {
+      score: number;
+      reason: string;
+    };
+    experience: {
+      score: number;
+      reason: string;
+    };
+    skills: {
+      score: number;
+      reason: string;
+    };
+    education: {
+      score: number;
+      reason: string;
+    };
+    keywords: {
+      score: number;
+      reason: string;
+    };
+    network?: {
+      score: number;
+      reason: string;
+    };
+    activity?: {
+      score: number;
+      reason: string;
+    };
+    recommendations?: {
+      score: number;
+      reason: string;
+    };
+    achievements?: {
+      score: number;
+      reason: string;
+    };
+  };
+}
+
 export interface AnalysisResult {
   summary: string;
   strengths: string[];
   suggestions: string[];
   keywords: string[];
+  careerPaths?: string[];
+  profileScore?: ProfileScore;
 }
 
 export default function ProfileAnalyzer() {
@@ -171,14 +216,32 @@ export default function ProfileAnalyzer() {
       }
 
       // Update credits after successful analysis
-      await updateCredits();
+      const creditUpdateSuccess = await updateCredits();
+      if (!creditUpdateSuccess) {
+        throw new Error("Failed to update credits. Please try again.");
+      }
       await fetchUserCredits();
 
+      // Ensure data has the expected structure
+      if (!data.profile || !data.analysis) {
+        throw new Error("Invalid response format from the server");
+      }
+
+      // Make sure analysis has all required fields
+      const safeAnalysis = {
+        summary: data.analysis.summary || "",
+        strengths: data.analysis.strengths || [],
+        suggestions: data.analysis.suggestions || [],
+        keywords: data.analysis.keywords || [],
+        careerPaths: data.analysis.careerPaths || [],
+        profileScore: data.analysis.profileScore || null,
+      };
+
       // Save analysis to history
-      await saveAnalysisToHistory(data.profile, data.analysis);
+      await saveAnalysisToHistory(data.profile, safeAnalysis);
 
       setProfileData(data.profile);
-      setAnalysis(data.analysis);
+      setAnalysis(safeAnalysis);
       setActiveTab("analysis");
 
       toast({
@@ -195,18 +258,31 @@ export default function ProfileAnalyzer() {
 
   const updateCredits = async () => {
     try {
-      const { error } = await supabase.rpc("decrement_credits", {
-        user_id: user?.id,
+      const { data, error } = await supabase.rpc("decrement_credits", {
+        p_user_id: user?.id,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error updating credits:", error);
+        toast({
+          title: "Error updating credits",
+          description:
+            error.message || "There was an issue deducting your credits.",
+          variant: "destructive",
+        });
+        throw error;
+      }
+
+      return true;
     } catch (error) {
       console.error("Error updating credits:", error);
       toast({
         title: "Error updating credits",
-        description: "There was an issue deducting your credits.",
+        description:
+          error.message || "There was an issue deducting your credits.",
         variant: "destructive",
       });
+      return false;
     }
   };
 
@@ -231,19 +307,33 @@ export default function ProfileAnalyzer() {
   const getAnalysisText = () => {
     if (!analysis) return "";
 
-    return `# LinkedIn Profile Analysis
+    let text = `# LinkedIn Profile Analysis\n\n`;
 
-## Summary
-${analysis.summary}
+    if (analysis.profileScore) {
+      text += `## Profile Score: ${analysis.profileScore.overall}/100\n\n`;
+    }
 
-## Strengths
-${analysis.strengths.map((s) => `- ${s}`).join("\n")}
+    text += `## Summary\n${analysis.summary || "No summary available"}\n\n## Strengths\n${(analysis.strengths || []).map((s) => `- ${s}`).join("\n")}\n\n## Suggestions for Improvement\n${(analysis.suggestions || []).map((s) => `- ${s}`).join("\n")}\n\n## Keywords\n${(analysis.keywords || []).join(", ")}`;
 
-## Suggestions for Improvement
-${analysis.suggestions.map((s) => `- ${s}`).join("\n")}
+    if (analysis.careerPaths && analysis.careerPaths.length > 0) {
+      text += `\n\n## Potential Career Paths\n${analysis.careerPaths.map((p) => `- ${p}`).join("\n")}`;
+    }
 
-## Keywords
-${analysis.keywords.join(", ")}`;
+    if (analysis.profileScore) {
+      text += `\n\n## Section Scores\n`;
+      Object.entries(analysis.profileScore.sections || {}).forEach(
+        ([key, section]) => {
+          if (section) {
+            const sectionName = key
+              .replace(/([A-Z])/g, " $1")
+              .replace(/^./, (str) => str.toUpperCase());
+            text += `- ${sectionName}: ${section.score}/100 - ${section.reason}\n`;
+          }
+        },
+      );
+    }
+
+    return text;
   };
 
   return (
@@ -319,7 +409,7 @@ ${analysis.keywords.join(", ")}`;
                 asChild
                 className="text-blue-600 border-blue-200 hover:bg-blue-50"
               >
-                <a href="/dashboard">Purchase Credits</a>
+                <a href="/pricing">Purchase Credits</a>
               </Button>
             </div>
           </CardContent>
@@ -355,7 +445,7 @@ ${analysis.keywords.join(", ")}`;
               </TabsList>
 
               <TabsContent value="analysis">
-                {analysis && (
+                {analysis ? (
                   <Card>
                     <CardHeader>
                       <CardTitle>AI Analysis</CardTitle>
@@ -372,8 +462,22 @@ ${analysis.keywords.join(", ")}`;
                           Professional Summary
                         </h3>
                         <p className="text-gray-700 bg-blue-50 p-3 rounded-md border-l-4 border-blue-400">
-                          {analysis.summary}
+                          {analysis.summary || "No summary available"}
                         </p>
+                        {analysis.profileScore && (
+                          <div className="mt-3 flex items-center bg-blue-50 p-3 rounded-md">
+                            <span className="font-medium text-blue-800 mr-2">
+                              Profile Score:
+                            </span>
+                            <span className="font-bold text-blue-800">
+                              {analysis.profileScore.overall}/100
+                            </span>
+                            <Progress
+                              value={analysis.profileScore.overall}
+                              className="h-2 ml-3 flex-1"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <Separator />
@@ -386,17 +490,26 @@ ${analysis.keywords.join(", ")}`;
                           Key Strengths
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {analysis.strengths.map((strength, index) => (
-                            <div
-                              key={index}
-                              className="bg-green-50 p-3 rounded-md border-l-4 border-green-400 flex items-start"
-                            >
-                              <div className="text-green-600 font-medium mr-2">
-                                •
+                          {analysis.strengths &&
+                          analysis.strengths.length > 0 ? (
+                            analysis.strengths.map((strength, index) => (
+                              <div
+                                key={index}
+                                className="bg-green-50 p-3 rounded-md border-l-4 border-green-400 flex items-start"
+                              >
+                                <div className="text-green-600 font-medium mr-2">
+                                  •
+                                </div>
+                                <div className="text-gray-700">{strength}</div>
                               </div>
-                              <div className="text-gray-700">{strength}</div>
+                            ))
+                          ) : (
+                            <div className="bg-green-50 p-3 rounded-md border-l-4 border-green-400 col-span-2">
+                              <div className="text-gray-700">
+                                No strengths data available
+                              </div>
                             </div>
-                          ))}
+                          )}
                         </div>
                       </div>
 
@@ -410,17 +523,28 @@ ${analysis.keywords.join(", ")}`;
                           Actionable Improvements
                         </h3>
                         <div className="space-y-3">
-                          {analysis.suggestions.map((suggestion, index) => (
-                            <div
-                              key={index}
-                              className="bg-amber-50 p-3 rounded-md border-l-4 border-amber-400 flex"
-                            >
-                              <div className="bg-amber-100 text-amber-800 rounded-full h-6 w-6 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
-                                {index + 1}
+                          {analysis.suggestions &&
+                          analysis.suggestions.length > 0 ? (
+                            analysis.suggestions.map((suggestion, index) => (
+                              <div
+                                key={index}
+                                className="bg-amber-50 p-3 rounded-md border-l-4 border-amber-400 flex"
+                              >
+                                <div className="bg-amber-100 text-amber-800 rounded-full h-6 w-6 flex items-center justify-center mr-3 flex-shrink-0 mt-0.5">
+                                  {index + 1}
+                                </div>
+                                <div className="text-gray-700">
+                                  {suggestion}
+                                </div>
                               </div>
-                              <div className="text-gray-700">{suggestion}</div>
+                            ))
+                          ) : (
+                            <div className="bg-amber-50 p-3 rounded-md border-l-4 border-amber-400">
+                              <div className="text-gray-700">
+                                No improvement suggestions available
+                              </div>
                             </div>
-                          ))}
+                          )}
                         </div>
                       </div>
 
@@ -435,18 +559,49 @@ ${analysis.keywords.join(", ")}`;
                         </h3>
                         <div className="bg-purple-50 p-4 rounded-md border border-purple-200">
                           <div className="flex flex-wrap gap-2">
-                            {analysis.keywords.map((keyword, index) => (
-                              <Badge
-                                key={index}
-                                variant="secondary"
-                                className="bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors px-3 py-1 text-sm"
-                              >
-                                {keyword}
-                              </Badge>
-                            ))}
+                            {analysis.keywords &&
+                            analysis.keywords.length > 0 ? (
+                              analysis.keywords.map((keyword, index) => (
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className="bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors px-3 py-1 text-sm"
+                                >
+                                  {keyword}
+                                </Badge>
+                              ))
+                            ) : (
+                              <div className="text-gray-700 w-full text-center py-2">
+                                No keywords available
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
+
+                      {analysis.careerPaths &&
+                        analysis.careerPaths.length > 0 && (
+                          <>
+                            <Separator />
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 flex items-center">
+                                <span className="bg-blue-100 text-blue-800 p-1 rounded-full mr-2">
+                                  <Award className="h-4 w-4" />
+                                </span>
+                                Potential Career Paths
+                              </h3>
+                              <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
+                                <ul className="list-disc pl-5 space-y-1">
+                                  {analysis.careerPaths.map((path, index) => (
+                                    <li key={index} className="text-gray-700">
+                                      {path}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          </>
+                        )}
                     </CardContent>
                     <CardFooter className="flex justify-end gap-2">
                       <Button
@@ -472,6 +627,15 @@ ${analysis.keywords.join(", ")}`;
                       </Button>
                     </CardFooter>
                   </Card>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center p-8 bg-white rounded-md shadow">
+                    <div className="text-center max-w-md">
+                      <p className="text-gray-600">
+                        No analysis data available. Enter a LinkedIn profile URL
+                        to analyze.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </TabsContent>
 
@@ -482,7 +646,10 @@ ${analysis.keywords.join(", ")}`;
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <ProfileView profile={profileData} />
+                    <ProfileView
+                      profile={profileData}
+                      profileScore={analysis?.profileScore}
+                    />
                   </motion.div>
                 )}
               </TabsContent>
